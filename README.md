@@ -41,7 +41,7 @@ pip install -r requirements.txt
 To start the chatbot, run the following command:
 
 ```bash
-python src/chatbot.py
+python bot/chatbot.py
 ```
 
 ## Contributing
