@@ -56,9 +56,9 @@ def main():
         'group_trigger_keyword': '',
         'token_price': 0.002,
         'image_prices': [0.016, 0.018, 0.02],
-        'transcription_price': 0.006,
-        'bot_language': 'en',
     }
-    
+    openai_helper = OpenAIHelper(config=openai_config)
+    telegram_bot = TelegramHelper(config=telegram_config, openai=openai_helper)
+    telegram_bot.run()
     if __name__ == '__main__':
         main()
