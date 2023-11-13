@@ -1,19 +1,16 @@
 import openai
 
 class OpenAIHelper:
-    def __init__(self, api_key):
-        self.api_key = api_key
-        openai.api_key = self.api_key
+    def __init__(self, config: dict):
+        openai.api_key = config['api_key']
+        self.config = config
+        self.thread_mapping = {}
+        self.client = openai.Client()
+        thread = self.client.beta.threads.create()
 
-    def generate_response(self, prompt):
-        try:
-            response = openai.Completion.create(
-              engine="text-davinci-002",
-              prompt=prompt,
-              temperature=0.5,
-              max_tokens=100
-            )
-            return response.choices[0].text.strip()
-        except Exception as e:
-            print(f"Error: {e}")
-            return None
+# create assistant
+# create thread
+# run assistant
+#
+#
+#

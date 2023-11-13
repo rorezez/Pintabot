@@ -1,7 +1,7 @@
 import logging
 import os
 from dotenv import load_dotenv
-from helpers.telegram_helper import TelegramHelper
+from helpers.telegram_bot import TelegramHelper
 from helpers.openAI_helper import OpenAIHelper
 
 
