@@ -1,5 +1,5 @@
 from __future__ import annotations
-import telegram
+import re
 import logging
 import asyncio
 from telegram import Message, MessageEntity, Update, constants
@@ -46,21 +46,29 @@ def split_into_chunks_nostream(text: str, chunk_size: int = 4096) -> list[str]:
         chunks.append(chunk)
     
     return chunks
+
 async def wrap_with_indicator(update: Update, context: CallbackContext, coroutine,
                               chat_action: constants.ChatAction = "", is_inline=False):
     """
     Wraps a coroutine while repeatedly sending a chat action to the user.
     """
+    sticker_file_id ='CAACAgIAAxkBAAEKx4dlWdkG5vCSbxPHsnlIulfIyMZnSgAC6gADUomRI59_7GXzyEHSMwQ'
+    logging.info(f"Starting wrap_with_indicator with chat_action: {chat_action}, is_inline: {is_inline}")
+    message = await update.effective_chat.send_sticker(sticker=sticker_file_id)
     task = context.application.create_task(coroutine(), update=update)
+    
     while not task.done():
-        if not is_inline:
-            context.application.create_task(
-                update.effective_chat.send_action(chat_action)
-            )
         try:
             await asyncio.wait_for(asyncio.shield(task), 10)
         except asyncio.TimeoutError:
+            logging.warning("Task took longer than 10 seconds.")
             pass
+    
+    # Delete the smiley emoji message
+    await message.delete()
+    
+    logging.info("Task completed.")
+
 async def error_handler(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handles errors in the telegram-python-bot library.

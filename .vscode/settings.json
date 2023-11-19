@@ -1,0 +1,12 @@
+{
+    "github.copilot-labs.advanced": {
+        "secret_key": ""
+    },
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "./bot",
+        "-p",
+        "*_test.py"
+    ]
+}

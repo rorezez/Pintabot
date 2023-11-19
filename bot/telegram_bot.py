@@ -1,8 +1,8 @@
 from __future__ import annotations
-from helpers.openAI_helper import OpenAIHelper
+from openAI_helper import OpenAIHelper
 from telegram import BotCommand
 from telegram import Update, constants
-from telegram.ext import ContextTypes, ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackContext, Application
+from telegram.ext import ContextTypes, ApplicationBuilder, CommandHandler, MessageHandler, filters, InlineQueryHandler, Application
 from utils import message_text, split_into_chunks_nostream , wrap_with_indicator, error_handler
 import logging
 
@@ -21,15 +21,12 @@ class TelegramHelper:
         """
         self.config = config
         self.openai = openai
+        self.assistant_id = self.openai.get_or_create_assistant(name="Pintabot")
         self.commands = [
-            BotCommand(command='help', description="Menampilkan pesan bantuan"),
-            BotCommand(command='reset', description="Menghapus konteks percakapan saat ini"),
-            BotCommand(command='stats', description="Menampilkan statistik penggunaan bot"),
-            BotCommand(command='regenerate', description="Menghasilkan ulang model gpt"),
-            BotCommand(command='addcontext', description='Tambahkan konteks ke dalam percakapan')
+            BotCommand(command='help', description="Menampilkan pesan bantuan")
         ]
         self.disallowed_message = "Maaf anda belum terdaftar sebagai pengguna bot ini. Silahkan hubungi @{} untuk mendapatkan akses.".format(
-            self.config['admin_username'])
+            self.config['admin_usernames'])
         self.last_message = {}
 
     async def help(self, update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
@@ -51,36 +48,42 @@ class TelegramHelper:
         """
         Handles the user's prompt and sends the response.
         """
-        if not await self.check_allowed(update, context):
-            user_id = update.effective_user.id  # Mengambil user ID dari pengguna yang mengirim pesan
-            admin_chat_id = "5595856929"  # Ganti dengan Chat ID admin yang sebenarnya
-            await context.bot.send_message(chat_id=admin_chat_id, text=f"User baru dengan ID: {user_id}")
-            return
         logging.info(
             f'Pesan baru dari user {update.message.from_user.name} (id: {update.message.from_user.id})')
         chat_id = update.effective_chat.id
-        prompt = f"{message_text(update.message)}"
-        self.last_message[chat_id] = prompt
+        query = f"{message_text(update.message)}"
+        self.last_message[chat_id] = query
         try:
             async def _reply():
-                #ambil response dari openai
-                response= await self.openai.get_chat_response(chat_id=chat_id, query=prompt)
-                # Split into chunks of 4096 characters (Telegram's message limit)
-                chunks = split_into_chunks_nostream(response)
+                # Get response from OpenAI
+                messages = await self.openai.get_message_from_assistant(chat_id=chat_id, prompt=query)
 
-                for chunk in enumerate(chunks):
-                    try:
-                        await update.effective_message.reply_text(
-                            text=chunk,
-                            parse_mode=constants.ParseMode.MARKDOWN
-                        )
-                    except Exception:
+                # Filter out only the assistant's messages
+                assistant_messages = [msg for msg in reversed(messages) if msg.role == "assistant"]
+
+                # Check if there are any assistant messages
+                if assistant_messages:
+                    # Get the last message from the assistant
+                    last_response = assistant_messages[-1].content[0].text  # Sesuaikan akses atribut
+                    text = last_response.value  # Sesuaikan akses atribut
+                    # Process the last response (e.g., split into chunks if necessary)
+                    # Assuming last_response is a string; modify as needed based on actual data structure
+                    chunks = split_into_chunks_nostream(text)
+
+                    for chunk in chunks:
                         try:
-                            await update.effective_message.reply_text(text=chunk)
-                        except Exception as exception:
-                            raise exception
-
+                            await update.effective_message.reply_text(
+                                text=chunk,
+                                parse_mode=constants.ParseMode.MARKDOWN
+                            )
+                        except Exception:
+                            try:
+                                await update.effective_message.reply_text(text=chunk)
+                            except Exception as exception:
+                                        raise exception
+            logging.info("Starting wrap_with_indicator function")
             await wrap_with_indicator(update, context, _reply, constants.ChatAction.TYPING)
+            logging.info("Finished wrap_with_indicator function")
 
         except Exception as e:
             logging.exception(e)
@@ -89,11 +92,27 @@ class TelegramHelper:
                 parse_mode=constants.ParseMode.MARKDOWN
             )
     
+    async def inline_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+            """
+            Handle the inline query. This is run when you type: @botusername <query>
+            """
+            query = update.inline_query.query
+            if len(query) < 3:
+                return
+            if not await self.check_allowed_and_within_budget(update, context, is_inline=True):
+                return
+
+            callback_data_suffix = "gpt:"
+            result_id = str(uuid4())
+            self.inline_queries_cache[result_id] = query
+            callback_data = f'{callback_data_suffix}{result_id}'
+
+            await self.send_inline_query_result(update, result_id, message_content=query, callback_data=callback_data)
+
     async def post_init(self, application: Application) -> None:
             """
             Post initialization hook for the bot.
             """
-            await application.bot.set_my_commands(self.group_commands)
             await application.bot.set_my_commands(self.commands)
 
     def run(self):
@@ -102,8 +121,6 @@ class TelegramHelper:
         """
         application = ApplicationBuilder() \
             .token(self.config['token']) \
-            .proxy_url(self.config['proxy']) \
-            .get_updates_proxy_url(self.config['proxy']) \
             .post_init(self.post_init) \
             .concurrent_updates(True) \
             .build()
@@ -111,6 +128,9 @@ class TelegramHelper:
         application.add_handler(CommandHandler('help', self.help))
         application.add_handler(CommandHandler('start', self.help))
         application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), self.prompt))
+        application.add_handler(InlineQueryHandler(self.inline_query, chat_types=[
+            constants.ChatType.GROUP, constants.ChatType.SUPERGROUP, constants.ChatType.PRIVATE
+        ]))
 
         application.add_error_handler(error_handler)
 
