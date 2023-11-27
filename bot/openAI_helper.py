@@ -1,7 +1,6 @@
 import openai
 import time
 import logging
-import pprint
 class OpenAIHelper:
     def __init__(self, config: dict):
         openai.api_key = config['api_key']
